@@ -17,22 +17,23 @@ router = APIRouter()
 
 async def find_tasks_list(list_id: int, db, user=None) -> TasksList | None:
     """
-    function to get the tasks list by list_id
+    function to get a tasks list by list_id
     pass the user if you need to check if the tasks list belongs to the user
     """
-    if user:
-        result = await db.execute(
-            select(TasksList)
-            .where(TasksList.id == list_id)
-            .options(selectinload(TasksList.user)))
-        tasks_list = result.scalars().first()
-        if tasks_list.user.id != user.id:
-            raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Task List not created by current User")
-    else:
-        result = await db.execute(select(TasksList).where(TasksList.id == list_id))
-        tasks_list = result.scalars().first()
+    result = await db.execute(select(TasksList)
+                              .where(TasksList.id == list_id)
+                              .options(selectinload(TasksList.user)))
+    tasks_list = result.scalars().first()
+
     if not tasks_list:
-        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Tasks List not found")
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Tasks list not found")
+
+    if user and tasks_list.user.id != user.id:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Tasks list does not belong to the current user"
+        )
+
     return tasks_list
 
 

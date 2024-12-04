@@ -27,3 +27,9 @@ class TaskCreate(BaseModel):
     task_title: str
     description: Optional[str] = None
     list_id: int
+
+
+class TaskPatch(BaseModel):
+    task_title: str
+    description: Optional[str] = None
+    list_id: int
