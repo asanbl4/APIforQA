@@ -28,13 +28,6 @@ async def create_default_tasks_list(list_title: str, user: User, db):
     await db.refresh(new_tasks_list)
 
 
-@router.get("/")
-async def get_users(db: AsyncSession = Depends(get_db_session)):
-    result = await db.execute(select(User))
-    users = result.scalars().all()
-    return users
-
-
 @router.post("/register")
 async def create_user(user: UserCreate, db: AsyncSession = Depends(get_db_session)):
     if user.password != user.confirm_password:
