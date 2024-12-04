@@ -60,6 +60,22 @@ async def create_task(
     return {"message": "Task created successfully", "task": new_task}
 
 
+@router.delete("/{task_id}")
+async def delete_task(
+        task_id: int,
+        token: str = Depends(token_dependency),
+        db: AsyncSession = Depends(get_db_session)
+):
+    user = await auth.validate_token(token, db)
+    task = await find_task(task_id, db, user)
+
+    task.deleted_at = datetime.utcnow()
+
+    db.add(task)
+    await db.commit()
+    return JSONResponse(status_code=status.HTTP_200_OK, content={"message": "Task deleted successfully"})
+
+
 @router.patch("/{task_id}/update")
 async def patch_task(
         task_id: int,
