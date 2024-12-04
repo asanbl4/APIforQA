@@ -15,8 +15,15 @@ from datetime import datetime
 router = APIRouter()
 
 
-async def find_tasks_list(list_id: int, db) -> TasksList | None:
-    result = await db.execute(select(TasksList).where(TasksList.id == list_id))
+async def find_tasks_list(list_id: int, db, user=None) -> TasksList | None:
+    """pass the user if you need to select the user inload, e.g. tasks_list.user.id"""
+    if user:
+        result = await db.execute(
+            select(TasksList)
+            .where(TasksList.id == list_id)
+            .options(selectinload(TasksList.user)))
+    else:
+        result = await db.execute(select(TasksList).where(TasksList.id == list_id))
     tasks_list = result.scalars().first()
     if not tasks_list:
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Tasks List not found")
@@ -125,14 +132,7 @@ async def delete_tasks_tasks_list(
         db: AsyncSession = Depends(get_db_session)
 ):
     user = await auth.validate_token(token, db)
-
-    result = await db.execute(
-        select(TasksList)
-        .where(TasksList.id == list_id)
-        .options(selectinload(TasksList.user)))
-    tasks_list = result.scalars().first()
-    if not tasks_list:
-        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Tasks List not found")
+    tasks_list = await find_tasks_list(list_id, db, user)
 
     if tasks_list.user.id != user.id:
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Task List not created by current User")
@@ -153,3 +153,29 @@ async def delete_tasks_tasks_list(
     return JSONResponse(status_code=status.HTTP_200_OK, content={"message": "ok"})
 
 
+@router.put("/{list_id}/done-all")
+async def delete_tasks_tasks_list(
+        list_id: int,
+        token: str = Depends(token_dependency),
+        db: AsyncSession = Depends(get_db_session)
+):
+    user = await auth.validate_token(token, db)
+    tasks_list = await find_tasks_list(list_id, db, user)
+
+    if tasks_list.user.id != user.id:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Task List not created by current User")
+
+    result_tasks = await db.execute(
+        select(Task)
+        .where(Task.related_task_list == list_id)
+        .options(selectinload(Task.user))
+    )
+    tasks = result_tasks.scalars().all()
+
+    for task in tasks:
+        task.done = True
+        db.add(task)
+
+    await db.commit()
+
+    return JSONResponse(status_code=status.HTTP_200_OK, content={"message": "ok"})
