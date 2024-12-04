@@ -16,15 +16,21 @@ router = APIRouter()
 
 
 async def find_tasks_list(list_id: int, db, user=None) -> TasksList | None:
-    """pass the user if you need to select the user inload, e.g. tasks_list.user.id"""
+    """
+    function to get the tasks list by list_id
+    pass the user if you need to check if the tasks list belongs to the user
+    """
     if user:
         result = await db.execute(
             select(TasksList)
             .where(TasksList.id == list_id)
             .options(selectinload(TasksList.user)))
+        tasks_list = result.scalars().first()
+        if tasks_list.user.id != user.id:
+            raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Task List not created by current User")
     else:
         result = await db.execute(select(TasksList).where(TasksList.id == list_id))
-    tasks_list = result.scalars().first()
+        tasks_list = result.scalars().first()
     if not tasks_list:
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Tasks List not found")
     return tasks_list
@@ -115,14 +121,28 @@ async def patch_tasks_list(
         db: AsyncSession = Depends(get_db_session)
 ):
     user = await auth.validate_token(token, db)
-
-    tasks_list = await find_tasks_list(list_id, db)
+    tasks_list = await find_tasks_list(list_id, db, user)
 
     await if_list_title_already_exists(tasks_list.list_title, db)
 
     ...
 
     return JSONResponse(status_code=200, content={"message": "ok"})
+
+
+@router.delete("/{list_id}")
+async def delete_tasks_list(
+    list_id: int,
+    token: str = Depends(token_dependency),
+    db: AsyncSession = Depends(get_db_session)
+):
+    user = await auth.validate_token(token, db)
+    tasks_list = await find_tasks_list(list_id, db, user)
+
+    tasks_list.deleted_at = datetime.utcnow()
+    db.add(tasks_list)
+    await db.commit()
+    return JSONResponse(status_code=status.HTTP_200_OK, content={"message": "ok"})
 
 
 @router.patch("/{list_id}/delete-tasks")
@@ -133,9 +153,6 @@ async def delete_tasks_tasks_list(
 ):
     user = await auth.validate_token(token, db)
     tasks_list = await find_tasks_list(list_id, db, user)
-
-    if tasks_list.user.id != user.id:
-        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Task List not created by current User")
 
     result_tasks = await db.execute(
         select(Task)
