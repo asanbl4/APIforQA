@@ -1,18 +1,31 @@
-from datetime import timedelta
+from datetime import timedelta, datetime
 
 from fastapi import APIRouter, Depends, HTTPException, status
 from fastapi.responses import JSONResponse
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.future import select
-from core.models import User
+from core.models import User, TasksList
 from core.database import get_db_session
-from core.schemas import UserCreate, UserAuthorize
+from core.schemas import UserCreate, UserAuthorize, TasksListCreate
 from core.utils import auth
 from uuid import UUID
 
 
 router = APIRouter()
 
+
+async def create_default_tasks_list(list_title: str, user: User, db):
+    new_tasks_list = TasksList(
+        list_title=list_title,
+        description=None,
+        created_by=user.id,
+        created_at=datetime.utcnow(),
+        updated_at=datetime.utcnow()
+    )
+
+    db.add(new_tasks_list)
+    await db.commit()
+    await db.refresh(new_tasks_list)
 
 @router.get("/")
 async def get_users(db: AsyncSession = Depends(get_db_session)):
@@ -39,6 +52,8 @@ async def create_user(user: UserCreate, db: AsyncSession = Depends(get_db_sessio
     db.add(new_user)
     await db.commit()
     await db.refresh(new_user)
+
+    await create_default_tasks_list(list_title=f"{user.username}'s default task-list", user=new_user, db=db)
 
     return new_user
 
