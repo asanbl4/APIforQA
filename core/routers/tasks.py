@@ -14,7 +14,7 @@ from datetime import datetime
 router = APIRouter()
 
 
-async def find_task(task_id: int, db, user=None, ) -> Task | None:
+async def find_task(task_id: int, db, user=None) -> Task | None:
     """
     function to get a task by list_id
     pass the user if you need to check if the task belongs to the user
@@ -29,16 +29,17 @@ async def find_task(task_id: int, db, user=None, ) -> Task | None:
     if not task:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Task not found")
 
-    if user and task.user.id != user.id:
-        raise HTTPException(
-            status_code=status.HTTP_403_FORBIDDEN,
-            detail="Task does not belong to the current user"
-        )
+    if user:
+        if task.user.id != user.id:
+            raise HTTPException(
+                status_code=status.HTTP_403_FORBIDDEN,
+                detail="Task does not belong to the current user"
+            )
 
     return task
 
 
-@router.post("/")
+@router.post("/create")
 async def create_task(
         task: TaskCreate,
         token: str = Depends(token_dependency),
@@ -78,3 +79,17 @@ async def patch_task(
     return JSONResponse(status_code=status.HTTP_200_OK, content={"message": "Task updated successfully"})
 
 
+@router.patch("/{task_id}/done")
+async def done_task(
+        task_id: int,
+        token: str = Depends(token_dependency),
+        db: AsyncSession = Depends(get_db_session)
+):
+    user = await auth.validate_token(token, db)
+    task = await find_task(task_id, db)
+
+    task.done = True
+
+    db.add(task)
+    await db.commit()
+    return JSONResponse(status_code=status.HTTP_200_OK, content={"message": "Task done"})

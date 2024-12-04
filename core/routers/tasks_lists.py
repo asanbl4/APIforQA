@@ -28,11 +28,12 @@ async def find_tasks_list(list_id: int, db, user=None) -> TasksList | None:
     if not tasks_list:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Tasks list not found")
 
-    if user and tasks_list.user.id != user.id:
-        raise HTTPException(
-            status_code=status.HTTP_403_FORBIDDEN,
-            detail="Tasks list does not belong to the current user"
-        )
+    if user:
+        if tasks_list.user.id != user.id:
+            raise HTTPException(
+                status_code=status.HTTP_403_FORBIDDEN,
+                detail="Tasks list does not belong to the current user"
+            )
 
     return tasks_list
 
