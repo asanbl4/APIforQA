@@ -15,6 +15,21 @@ from datetime import datetime
 router = APIRouter()
 
 
+async def find_tasks_list(list_id: int, db) -> TasksList | None:
+    result = await db.execute(select(TasksList).where(TasksList.id == list_id))
+    tasks_list = result.scalars().first()
+    if not tasks_list:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Tasks List not found")
+    return tasks_list
+
+
+async def if_list_title_already_exists(list_title: str, db) -> None:
+    result = await db.execute(select(TasksList).where(TasksList.list_title == list_title))
+    existing_tasks_list = result.scalars().first()
+    if existing_tasks_list:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Tasks list with this title already exists")
+
+
 @router.post("/", status_code=status.HTTP_201_CREATED)
 async def create_tasks_list(
         tasks_list: TasksListCreate,
@@ -22,11 +37,7 @@ async def create_tasks_list(
         db: AsyncSession = Depends(get_db_session)
 ):
     user = await auth.validate_token(token, db)
-
-    result = await db.execute(select(TasksList).where(TasksList.list_title == tasks_list.list_title))
-    existing_tasks_list = result.scalars().first()
-    if existing_tasks_list:
-        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Tasks list with this title already exists")
+    await if_list_title_already_exists(tasks_list.list_title, db)
 
     new_tasks_list = TasksList(
         list_title=tasks_list.list_title,
@@ -58,11 +69,7 @@ async def get_tasks_lists(
 
 @router.get("/{list_id}")
 async def get_tasks_list(list_id: int, db: AsyncSession = Depends(get_db_session)):
-    result = await db.execute(select(TasksList).where(TasksList.id == list_id))
-    tasks_list = result.scalars().first()
-
-    if not tasks_list:
-        raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail="Tasks List not found")
+    tasks_list = await find_tasks_list(list_id, db)
 
     result_tasks = await db.execute(select(Task).where(Task.related_task_list == list_id))
     tasks = result_tasks.scalars().all()
@@ -75,6 +82,7 @@ async def get_tasks_list(list_id: int, db: AsyncSession = Depends(get_db_session
             "created_by": tasks_list.created_by,
             "created_at": tasks_list.created_at,
             "updated_at": tasks_list.updated_at,
+            "deleted_at": tasks_list.deleted_at
         },
         "tasks": [
             {
@@ -85,6 +93,7 @@ async def get_tasks_list(list_id: int, db: AsyncSession = Depends(get_db_session
                 "created_by": task.created_by,
                 "created_at": task.created_at,
                 "updated_at": task.updated_at,
+                "deleted_at": task.deleted_at
             }
             for task in tasks
         ],
@@ -98,18 +107,49 @@ async def patch_tasks_list(
         token: str = Depends(token_dependency),
         db: AsyncSession = Depends(get_db_session)
 ):
-    user = auth.validate_token(token, db)
+    user = await auth.validate_token(token, db)
 
-    result = await db.execute(select(TasksList).where(TasksList.id == list_id))
-    tasks_list = result.scalars().first()
-    if not tasks_list:
-        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Tasks List not found")
+    tasks_list = await find_tasks_list(list_id, db)
 
-    result = await db.execute(select(TasksList).where(TasksList.list_title == tasks_list.list_title))
-    existing_tasks_list = result.scalars().first()
-    if existing_tasks_list:
-        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Tasks list with this title already exists")
+    await if_list_title_already_exists(tasks_list.list_title, db)
 
     ...
 
     return JSONResponse(status_code=200, content={"message": "ok"})
+
+
+@router.patch("/{list_id}/delete-tasks")
+async def delete_tasks_tasks_list(
+        list_id: int,
+        token: str = Depends(token_dependency),
+        db: AsyncSession = Depends(get_db_session)
+):
+    user = await auth.validate_token(token, db)
+
+    result = await db.execute(
+        select(TasksList)
+        .where(TasksList.id == list_id)
+        .options(selectinload(TasksList.user)))
+    tasks_list = result.scalars().first()
+    if not tasks_list:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Tasks List not found")
+
+    if tasks_list.user.id != user.id:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Task List not created by current User")
+
+    result_tasks = await db.execute(
+        select(Task)
+        .where(Task.related_task_list == list_id)
+        .options(selectinload(Task.user))
+    )
+    tasks = result_tasks.scalars().all()
+
+    for task in tasks:
+        task.deleted_at = datetime.utcnow()
+        db.add(task)
+
+    await db.commit()
+
+    return JSONResponse(status_code=status.HTTP_200_OK, content={"message": "ok"})
+
+

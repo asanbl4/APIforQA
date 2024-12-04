@@ -38,7 +38,7 @@ def create_access_token(data: dict, expires_delta: Optional[timedelta] = None):
     return encoded_jwt
 
 
-def decode_jwt(token: str):
+async def decode_jwt(token: str):
     try:
         payload = jwt.decode(token, SECRET_KEY, algorithms=[ALGORITHM])
         return payload
@@ -65,7 +65,7 @@ async def token_dependency(authorization: str = Header(None)):
 
 
 async def validate_token(token, db):
-    payload = decode_jwt(token)
+    payload = await decode_jwt(token)
     if not payload:
         raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Invalid token")
 
